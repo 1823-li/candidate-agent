@@ -78,8 +78,8 @@ function renderHistory() {
             </div>
             <div class="history-actions">
                 <button class="btn-hist view" onclick="viewHistoryItem(${idx})" title="查看详情">👁 查看</button>
-                <button class="btn-hist dl-txt" onclick="downloadHistoryItem(${idx}, 'match', 'txt')" title="下载报告TXT">📥 报告</button>
-                <button class="btn-hist dl-txt" onclick="downloadHistoryItem(${idx}, 'interview', 'txt')" title="下载面试题TXT">📥 面试题</button>
+                <button class="btn-hist dl-docx" onclick="downloadHistoryItem(${idx}, 'match', 'docx')" title="下载报告Word">📥 报告</button>
+                <button class="btn-hist dl-docx" onclick="downloadHistoryItem(${idx}, 'interview', 'docx')" title="下载面试提纲Word">📥 面试提纲</button>
                 <button class="btn-hist del" onclick="deleteHistoryItem(${idx})" title="删除此记录">🗑</button>
             </div>
         </li>`;
@@ -113,14 +113,12 @@ function viewHistoryItem(idx) {
             <div class="modal-content">${escapeHtml(item.reportText || '（无内容）')}</div>
         </div>
         <div class="modal-section">
-            <h3>🎤 结构化面试题</h3>
+            <h3>🎤 面试提纲</h3>
             <div class="modal-content">${escapeHtml(item.interviewText || '（无内容）')}</div>
         </div>
         <div style="text-align:center;margin-top:1rem;display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;">
             <button class="btn-download docx" onclick="downloadHistoryItem(${idx}, 'match', 'docx')">📥 下载报告 (Word)</button>
-            <button class="btn-download" onclick="downloadHistoryItem(${idx}, 'match', 'txt')">📥 下载报告 (TXT)</button>
-            <button class="btn-download docx" onclick="downloadHistoryItem(${idx}, 'interview', 'docx')">📥 下载面试题 (Word)</button>
-            <button class="btn-download" onclick="downloadHistoryItem(${idx}, 'interview', 'txt')">📥 下载面试题 (TXT)</button>
+            <button class="btn-download docx" onclick="downloadHistoryItem(${idx}, 'interview', 'docx')">📥 下载面试提纲 (Word)</button>
         </div>
     `;
 
@@ -161,7 +159,7 @@ function downloadHistoryItem(idx, type, format) {
         filename = `${item.name}_综合岗位匹配度报告`;
     } else {
         content = item.interviewText || '';
-        filename = `${item.name}_结构化面试题`;
+        filename = `${item.name}_面试提纲`;
     }
 
     if (format === 'docx') {
@@ -255,7 +253,7 @@ function renderProfileLibrary() {
     document.getElementById('libStatus').innerHTML =
         `当前画像库：<b>${names.length}</b> 个岗位 | 来源：${meta.source || '默认文件'} | 更新时间：${meta.time || '-'}`;
 
-    // 恢复之前选中项
+    // 恢复之前的选中项
     if (state.selectedPosition && state.profileLib[state.selectedPosition]) {
         select.value = state.selectedPosition;
         onPositionSelect();
@@ -312,7 +310,7 @@ initProfileLibrary();
 
 // ========== 文件上传处理 ==========
 document.querySelectorAll('input[type="file"]').forEach(input => {
-    if (!input.dataset.target) return;
+    if (!input.dataset.target) return; // 跳过画像库导入等非候选人材料输入
     input.addEventListener('change', async (e) => {
         const target = e.target.dataset.target;
         const file = e.target.files[0];
@@ -324,6 +322,7 @@ document.querySelectorAll('input[type="file"]').forEach(input => {
             state.texts[target] = await extractText(file);
             showToast(`✅ ${file.name} 解析成功`, 'success');
         } catch (err) {
+            // 解析失败：回滚上传状态，避免误认为已就绪
             state.files[target] = null;
             state.texts[target] = '';
             document.getElementById(`fname-${target}`).textContent = '';
@@ -334,7 +333,7 @@ document.querySelectorAll('input[type="file"]').forEach(input => {
     });
 });
 
-// ========== 文件文本的取 ==========
+// ========== 文件文本提取 ==========
 async function extractText(file) {
     const ext = file.name.split('.').pop().toLowerCase();
     let text;
@@ -345,6 +344,7 @@ async function extractText(file) {
     else if (ext === 'doc') throw new Error('不支持旧版 .doc 格式，请用 Word 另存为 .docx 后重新上传');
     else throw new Error('不支持的文件格式: .' + ext);
 
+    // 文本类文件：检测是否为二进制/损坏文件
     if (isBinaryText(text)) {
         throw new Error(`文件 "${file.name}" 内容为二进制乱码，可能已损坏，请重新下载/导出后再上传`);
     }
@@ -356,7 +356,7 @@ async function extractText(file) {
 
 function isBinaryText(text) {
     const sample = text.slice(0, 800);
-    if (!sample.trim()) return text.length > 0;
+    if (!sample.trim()) return text.length > 0; // 有内容但全是空白/控制符
     const controls = (sample.match(/[\x00-\x08\x0E-\x1F]/g) || []).length;
     return controls / sample.length > 0.1;
 }
@@ -364,7 +364,9 @@ function isBinaryText(text) {
 async function extractHtmlText(file) {
     const html = await file.text();
     const doc = new DOMParser().parseFromString(html, 'text/html');
+    // 移除脚本和样式
     doc.querySelectorAll('script, style, noscript').forEach(el => el.remove());
+    // 将块级元素边界转为换行，保留表格结构
     doc.querySelectorAll('tr').forEach(tr => tr.insertAdjacentText('beforeend', '\n'));
     doc.querySelectorAll('td, th').forEach(cell => cell.insertAdjacentText('beforeend', ' | '));
     doc.querySelectorAll('p, div, li, h1, h2, h3, h4, h5, h6, br').forEach(el => el.insertAdjacentText('beforeend', '\n'));
@@ -460,7 +462,7 @@ async function testConnection() {
     }
 }
 
-// 初始化：默认选中硅基流动预设
+// 初始化：默认选中硅基流动预设并显示提示
 applyProvider();
 
 // ========== DeepSeek API 调用 ==========
@@ -470,8 +472,9 @@ async function callDeepSeek(systemPrompt, userPrompt, maxTokens = 4096) {
     const modelName = document.getElementById('modelName').value.trim() || 'deepseek-chat';
     const isLocal = /localhost|127\.0\.0\.1/.test(apiBase);
     if (!apiKey && !isLocal) throw new Error('请先填写 API Key（或选择本地 Ollama 方案）');
-    const authKey = apiKey || 'ollama';
+    const authKey = apiKey || 'ollama'; // 本地服务无需真实密钥
 
+    // 兼容带/不带 /v1 后缀的 API 地址
     const base = apiBase.replace(/\/+$/, '');
     const endpoint = /\/v\d+$/.test(base) ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
 
@@ -524,6 +527,7 @@ function setStep(stepNum, status) {
 async function startAnalysis() {
     const candidateName = document.getElementById('candidateName').value.trim() || '候选人';
 
+    // 验证岗位选择与文件
     const missing = [];
     if (!state.texts.profile) missing.push('应聘岗位（请在画像库中选择）');
     const labels = { resume: '简历', gpi: 'GPI个性测验报告', assessment: '职能支持岗综合测评报告' };
@@ -535,6 +539,7 @@ async function startAnalysis() {
         return;
     }
 
+    // 禁用按钮，显示进度
     const btn = document.getElementById('btnGenerate');
     btn.disabled = true;
     document.getElementById('progressSection').classList.add('active');
@@ -542,22 +547,27 @@ async function startAnalysis() {
     for (let i = 1; i <= 6; i++) setStep(i, '');
 
     try {
+        // Step 1: 解析文件
         setStep(1, 'active');
         await sleep(500);
         setStep(1, 'done');
 
+        // Step 2: 简历与岗位匹配度分析
         setStep(2, 'active');
         const resumeMatchResult = await analyzeResumeMatch(candidateName);
         setStep(2, 'done');
 
+        // Step 3: 测评报告三维度分析
         setStep(3, 'active');
         const assessmentResult = await analyzeAssessment(candidateName);
         setStep(3, 'done');
 
+        // Step 4: 生成综合报告
         setStep(4, 'active');
         const fullReport = await generateFullReport(candidateName, resumeMatchResult, assessmentResult);
         state.reportText = fullReport;
-        const scoreMatch = fullReport.match(/综合评分[：:\s]*(\d{1,3})\s*分/);
+        // 提取分数
+        const scoreMatch = fullReport.match(/综合匹配度评分[：:\s]*(\d{1,3})\s*分/) || fullReport.match(/综合评分[：:\s]*(\d{1,3})\s*分/);
         if (scoreMatch) {
             state.score = parseInt(scoreMatch[1]);
         } else {
@@ -566,14 +576,17 @@ async function startAnalysis() {
         }
         setStep(4, 'done');
 
+        // Step 5: 设计面试题
         setStep(5, 'active');
         const interviewQuestions = await designInterviewQuestions(candidateName, fullReport);
         state.interviewText = interviewQuestions;
         setStep(5, 'done');
 
+        // Step 6: 完成
         setStep(6, 'done');
         document.getElementById('progressBar').style.width = '100%';
 
+        // 显示结果
         displayResults();
 
         // 💾 保存到历史记录
@@ -601,14 +614,14 @@ async function startAnalysis() {
 // ========== 分析函数 ==========
 async function analyzeResumeMatch(name) {
     const position = state.selectedPosition || '目标岗位';
-    const systemPrompt = `你是一位资深的人力资源专家，擅长通过简历分析候选人与岗位的匹配度。请从简历的角度，结合岗位人才画像，详细分析候选人的优势与劣势。`;
+    const systemPrompt = `你是一位资深的人力资源专家，擅长通过简历分析候选人与岗位的匹配度。请从简历角度，结合岗位人才画像，详细分析候选人的优势与劣势。`;
 
     const userPrompt = `请分析以下候选人与目标岗位的匹配度。
 
-\u3010\u5c97\u4f4d\u4eba\u624d\u753b\u50cf - ${position}\u3011
+【岗位人才画像 - ${position}】
 ${truncate(state.texts.profile, 5000)}
 
-\u3010\u5019\u9009\u4eba\u7b80\u5386 - ${name}\u3011
+【候选人简历 - ${name}】
 ${truncate(state.texts.resume, 5000)}
 
 请从以下方面进行分析：
@@ -625,14 +638,14 @@ ${truncate(state.texts.resume, 5000)}
 }
 
 async function analyzeAssessment(name) {
-    const systemPrompt = `你是一位专业的心理测评分析师，擅长解读北森GPI个性测验和职能支持岗综合测评报告。请按“成长的基础”、“成长的潜力”、“成长的渴望”三个维度综合分析候选人与鸿萌橡塑的匹配度。`;
+    const systemPrompt = `你是一位专业的心理测评分析师，擅长解读北森GPI个性测验和职能支持岗综合测评报告。请按"成长的基础"、"成长的潜力"、"成长的渴望"三个维度综合分析候选人与鸿萌橡塑的匹配度。`;
 
     const userPrompt = `请根据以下两份测评报告，按三个维度分析候选人 ${name} 与鸿萌橡塑的匹配度。
 
-\u3010\u5317\u68eeGPI\u4e2a\u6027\u6d4b\u9a8c\u6d4b\u8bc4\u62a5\u544a\u3011
+【北森GPI个性测验测评报告】
 ${truncate(state.texts.gpi, 5000)}
 
-\u3010\u804c\u80fd\u652f\u6301\u5c97\u7efc\u5408\u6d4b\u8bc4\u62a5\u544a\u3011
+【职能支持岗综合测评报告】
 ${truncate(state.texts.assessment, 5000)}
 
 请按以下三个维度进行分析：
@@ -658,96 +671,155 @@ ${truncate(state.texts.assessment, 5000)}
 }
 
 async function generateFullReport(name, resumeResult, assessmentResult) {
-    const systemPrompt = `你是一位高级人力资源顾问，负责为鸿萌橡塑撰写专业的候选人综合岗位匹配度报告。报告需要客观、全面、有数据支撑，最终给出100分制的综合评分。`;
+    const position = state.selectedPosition || '目标岗位';
+    const systemPrompt = `你是一位资深高级人力资源顾问，负责为鸿萌橡塑撰写专业的候选人综合岗位匹配度分析报告。报告必须严格遵循以下章节结构和格式，包含数据表格，客观全面，有数据支撑，最终给出100分制综合评分。`;
 
-    const userPrompt = `请为候选人 ${name} 生成一份完整的综合岗位匹配度报告。
+    const userPrompt = `请为候选人 ${name}（应聘岗位：${position}）生成一份完整的综合岗位匹配度报告。
 
-\u3010\u7b80\u5386\u5339\u914d\u5ea6\u5206\u6790\u3011
+【岗位人才画像】
+${truncate(state.texts.profile, 3000)}
+
+【简历匹配度分析】
 ${resumeResult}
 
-\u3010\u6d4b\u8bc4\u4e09\u7ef4\u5ea6\u5206\u6790\u3011
+【测评三维度分析】
 ${assessmentResult}
 
-请生成一份完整的综合报告，格式如下：
+请严格按照以下格式生成报告（注意：所有表格必须使用markdown管道符格式，即用 | 作为列分隔符）：
 
-========================================
-${name} 综合岗位匹配度报告
-鸿萌橡塑
-========================================
+综合匹配度评分：XX分/100分
 
-一、基本信息概述
-（简要概括候选人背景）
+一、评估结论总览
 
-二、简历维度分析
-（基于简历的匹配度分析，含优势和劣势）
+| 评估维度 | 得分(满分100) | 权重 | 加权得分 |
+|---------|-------------|------|----------|
+| 专业硬技能匹配度 | XX | 40% | XX |
+| 软素质与岗位特质匹配度 | XX | 30% | XX |
+| 成长潜力与发展适配度 | XX | 20% | XX |
+| 文化价值观与动机匹配度 | XX | 10% | XX |
+| **综合得分** | | | **XX≈XX分** |
 
-三、测评维度分析
-1. 成长的基础
-2. 成长的潜力  
-3. 成长的渴望
-（每个维度的详细分析）
+二、与JD各项要求的逐条匹配分析
 
-四、综合优势（至少5点，每点具体说明）
+☑ 完全匹配项
 
-五、综合劣势/风险项（至少5点，每点具体说明）
+| JD要求 | 简历对应 | 匹配情况 |
+|--------|---------|----------|
+| ... | ... | 完全符合/高度匹配 |
 
-六、综合评分
-综合评分：XX分（满分100分）
-评分依据：
-- 简历匹配度：XX分（权重30%）
-- 成长的基础：XX分（权重25%）
-- 成长的潜力：XX分（权重25%）
-- 成长的渴望：XX分（权重20%）
+部分匹配/待验证项
 
-七、总体建议
-（是否推荐进入下一轮，及理由）
+| JD要求 | 简历对应 | 分析 |
+|--------|---------|------|
+| ... | ... | 需面试确认... |
 
-请确保评分客观合理，优势和劣势分析具体详实。`;
+明显缺失项
+
+| JD要求 | 简历对应 | 分析 |
+|--------|---------|------|
+| ... | 未提及/空白 | 短板说明... |
+
+三、核心优势
+（列出5点以上核心优势，每点用数字编号+加粗标题，后跟具体说明，强调其对公司的价值和可迁移性）
+
+四、主要劣势与风险
+（列出3-5点主要劣势和风险，每点用数字编号+加粗标题，后跟具体分析及应对/验证建议）
+
+四、综合人岗匹配诊断
+
+| 成长维度 | 匹配度评分(满分10) | 核心结论 |
+|---------|------------------|----------|
+| 成长的基础 | X.X/10 | 一句话核心结论 |
+| 成长的潜力 | X.X/10 | 一句话核心结论 |
+| 成长的渴望 | X.X/10 | 一句话核心结论 |
+
+五、与同岗位其他候选人的差异化竞争力
+
+| 对比维度 | 该候选人 | 一般同业候选人 | 优势/短板 |
+|---------|---------|--------------|----------|
+| ... | ☑/✗描述 | 描述 | 判断 |
+
+六、面试阶段需进一步验证的问题
+
+| 验证项目 | 重要性 | 面试问题(建议STAR法则追问) |
+|---------|-------|--------------------------|
+| ... | 高/中/低 | 具体问题 |
+
+七、录用建议
+
+三种可行方案：
+
+| 方案 | 岗位定位 | 匹配度评估 |
+|------|---------|------------|
+| 方案一 | ... | XX分 |
+| 方案二 | ... | XX分 |
+| 方案三 | ... | - |
+
+综合判断（一段总结性文字）
+
+重要要求：
+1. 所有评分和结论必须基于提供的分析数据，客观有据
+2. 所有表格必须严格使用markdown管道符表格格式（用 | 分隔列）
+3. 综合评分必须客观合理，与各维度分析一致
+4. 优势和劣势分析要具体详实，引用简历和测评中的具体事实`;
 
     return await callDeepSeek(systemPrompt, userPrompt, 4096);
 }
 
 async function designInterviewQuestions(name, fullReport) {
-    const systemPrompt = `你是一位资深面试官，擅长设计结构化面试题目来验证候选人的真实能力和潜在风险。题目要针对性强、有深度，能有效区分候选人水平。`;
+    const systemPrompt = `你是一位资深面试官，擅长设计结构化面试提纲。题目针对性强、有深度，能有效验证候选人真实能力和潜在风险。输出格式整洁清晰、美观专业。`;
 
-    const userPrompt = `请根据以下综合报告，为候选人 ${name} 设计8-10道结构化面试题。
+    const userPrompt = `请根据以下综合报告，为候选人 ${name} 设计一份结构化面试提纲，共约10道题。
 
-\u3010\u7efc\u5408\u62a5\u544a\u3011
+【综合报告】
 ${fullReport}
 
 设计要求：
-1. 重点针对报告中的低分项和风险项设计题目
-2. 每道题从以下三个方面展开：
-   - 题目：具体的面试问题
-   - 追问：2-3个递进式追问
-   - 考察点：该题目要验证的核心能力/素质
+1. 重点针对报告中的低分项、风险项和待验证项设计题目
+2. 题目类型覆盖：专业能力验证（3-4题）、行为面试STAR（3-4题）、情景模拟（1-2题）、动机与价值观（1-2题）
+3. 每题标注重要性（高/中/低）
+4. 每题包含面试主问题 + 2-3个递进式追问要点
 
-3. 题目类型应覆盖：
-   - 专业能力验证题（2-3题）
-   - 行为面试题（STAR法）（2-3题）
-   - 情景模拟题（1-2题）
-   - 动机与价值观题（1-2题）
+请严格按以下格式输出：
 
-请按以下格式输出：
+${name} 面试提纲
 
-========================================
-${name} 结构化面试题
-========================================
+一、专业能力验证
 
-第1题：[题目类型]
-■ 题目：...
-■ 追问：
-  1. ...
-  2. ...
-  3. ...
-■ 考察点：...
+第1题  重要性：★★★
+面试问题：（具体的面试问题，建议STAR法则追问）
+追问要点：
+· ...
+· ...
 
-（依次列出所有题目）
+第2题  重要性：★★☆
+...
 
-========================================
-面试评分参考标准
-========================================
-（简要说明各题目的评分要点）`;
+二、行为面试（STAR法则）
+
+第X题  重要性：★★★
+面试问题：...
+追问要点：
+· ...
+· ...
+
+三、情景模拟
+
+第X题  重要性：★★☆
+面试问题：...
+追问要点：
+· ...
+
+四、动机与价值观
+
+第X题  重要性：★★☆
+面试问题：...
+追问要点：
+· ...
+
+五、面试评分参考
+
+简要说明各题目的评分要点和关注信号（什么样的回答是好的，什么是警示信号）。`;
 
     return await callDeepSeek(systemPrompt, userPrompt, 4096);
 }
@@ -757,6 +829,7 @@ function displayResults() {
     const section = document.getElementById('resultsSection');
     section.classList.add('active');
 
+    // 评分
     const circle = document.getElementById('scoreCircle');
     circle.textContent = state.score;
     circle.className = 'score-circle ' + (state.score >= 80 ? 'score-high' : state.score >= 60 ? 'score-mid' : 'score-low');
@@ -766,14 +839,16 @@ function displayResults() {
     else if (state.score >= 60) label.textContent = '匹配度中等 - 建议进一步评估';
     else label.textContent = '匹配度偏低 - 谨慎考虑';
 
+    // 报告内容
     document.getElementById('reportContent').textContent = state.reportText;
     document.getElementById('interviewContent').textContent = state.interviewText;
 
+    // 滚动到结果
     section.scrollIntoView({ behavior: 'smooth' });
 }
 
 // ========== 下载报告 ==========
-async function downloadReport(type, format = 'txt') {
+async function downloadReport(type, format = 'docx') {
     const candidateName = document.getElementById('candidateName').value.trim() || '候选人';
     let content, filename;
 
@@ -782,7 +857,7 @@ async function downloadReport(type, format = 'txt') {
         filename = `${candidateName}_综合岗位匹配度报告`;
     } else {
         content = state.interviewText;
-        filename = `${candidateName}_结构化面试题`;
+        filename = `${candidateName}_面试提纲`;
     }
 
     if (format === 'docx') {
@@ -817,75 +892,215 @@ function saveFile(blob, filename) {
 
 // ========== Word (DOCX) 导出 ==========
 async function generateDocx(text, title) {
-    const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Footer, PageNumber } = docx;
+    const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
+            Footer, PageNumber, Table, TableRow, TableCell, WidthType, BorderStyle,
+            VerticalAlign, ShadingType } = docx;
     const FONT = '微软雅黑';
     const lines = text.split(/\r?\n/);
     const children = [];
+    let i = 0;
     let isTitleHandled = false;
 
-    for (const raw of lines) {
+    // ---- 辅助：解析 markdown 表格块 ----
+    function parseTableBlock(tableLines) {
+        const rows = [];
+        for (const ln of tableLines) {
+            const t = ln.trim();
+            if (!t.startsWith('|')) continue;
+            if (/^\|[\s\-:|]+\|$/.test(t)) continue;
+            const cells = t.split('|').slice(1, -1).map(c => c.trim());
+            if (cells.length > 0 && cells.some(c => c)) rows.push(cells);
+        }
+        return rows;
+    }
+
+    // ---- 辅助：创建表格行 ----
+    function mkRow(cells, maxCols, isHeader) {
+        const borderDef = { style: BorderStyle.SINGLE, size: 1, color: 'BFBFBF' };
+        return new TableRow({
+            tableHeader: isHeader,
+            children: cells.map(text => new TableCell({
+                verticalAlign: VerticalAlign.CENTER,
+                shading: isHeader ? { type: ShadingType.SOLID, color: '2563EB', fill: '2563EB' } : undefined,
+                margins: { top: 40, bottom: 40, left: 80, right: 80 },
+                children: [new Paragraph({
+                    spacing: { before: 30, after: 30 },
+                    children: [new TextRun({
+                        text: (text || '').replace(/\*\*/g, ''),
+                        bold: isHeader || /\*\*/.test(text || ''),
+                        size: 20, font: FONT,
+                        color: isHeader ? 'FFFFFF' : '333333'
+                    })]
+                })]
+            }))
+        });
+    }
+
+    // ---- 辅助：创建表格 ----
+    function mkTable(dataRows) {
+        if (!dataRows.length) return null;
+        const maxCols = Math.max(...dataRows.map(r => r.length));
+        const borderDef = { style: BorderStyle.SINGLE, size: 1, color: 'BFBFBF' };
+        return new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            borders: { top: borderDef, bottom: borderDef, left: borderDef, right: borderDef, insideHorizontal: borderDef, insideVertical: borderDef },
+            rows: dataRows.map((cells, idx) => mkRow(cells, maxCols, idx === 0))
+        });
+    }
+
+    // ---- 辅助：处理行内加粗 **text** ----
+    function parseInlineRuns(text) {
+        const runs = [];
+        const re = /\*\*(.+?)\*\*/g;
+        let last = 0, m;
+        while ((m = re.exec(text)) !== null) {
+            if (m.index > last) runs.push(new TextRun({ text: text.slice(last, m.index), size: 22, font: FONT }));
+            runs.push(new TextRun({ text: m[1], bold: true, size: 22, font: FONT, color: '1d4ed8' }));
+            last = re.lastIndex;
+        }
+        if (last < text.length) runs.push(new TextRun({ text: text.slice(last), size: 22, font: FONT }));
+        return runs.length ? runs : [new TextRun({ text: text, size: 22, font: FONT })];
+    }
+
+    // ---- 主循环 ----
+    while (i < lines.length) {
+        const raw = lines[i];
         const line = raw.trimEnd();
         const trimmed = line.trim();
-        if (!trimmed) continue;
 
-        if (/^[=\-—_*]{3,}$/.test(trimmed)) {
-            children.push(new Paragraph({
-                border: { bottom: { color: '999999', size: 6, style: 'single' } },
-                spacing: { before: 100, after: 100 }
-            }));
+        // 空行跳过
+        if (!trimmed) { i++; continue; }
+
+        // 检测 markdown 表格块（连续 | 开头行）
+        if (trimmed.startsWith('|')) {
+            const tableLines = [];
+            while (i < lines.length && lines[i].trim().startsWith('|')) {
+                tableLines.push(lines[i]);
+                i++;
+            }
+            const dataRows = parseTableBlock(tableLines);
+            const tbl = mkTable(dataRows);
+            if (tbl) {
+                children.push(tbl);
+                children.push(new Paragraph({ spacing: { before: 60, after: 60 }, children: [] }));
+            }
             continue;
         }
 
+        // 文档主标题
         if (!isTitleHandled) {
             isTitleHandled = true;
             children.push(new Paragraph({
                 alignment: AlignmentType.CENTER,
-                spacing: { before: 200, after: 200 },
-                children: [new TextRun({ text: trimmed, bold: true, size: 36, font: FONT })]
+                spacing: { before: 200, after: 100 },
+                children: [new TextRun({ text: trimmed, bold: true, size: 36, font: FONT, color: '1d4ed8' })]
             }));
-            continue;
+            i++; continue;
         }
 
-        if (/^[一二三四五六七八九十]+、/.test(trimmed) || /^第\d+题/.test(trimmed) || (/^【.+】$/.test(trimmed) && trimmed.length <= 30)) {
+        // 综合评分行 → 大号居中显示
+        if (/综合匹配度评分/.test(trimmed) || /综合评分[：:]/.test(trimmed)) {
+            const sm = trimmed.match(/(\d{1,3})\s*分/);
+            if (sm) {
+                const sc = parseInt(sm[1]);
+                const clr = sc >= 80 ? '059669' : sc >= 60 ? 'd97706' : 'dc2626';
+                children.push(new Paragraph({ spacing: { before: 200, after: 0 }, alignment: AlignmentType.CENTER, children: [] }));
+                children.push(new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    spacing: { before: 0, after: 40 },
+                    children: [new TextRun({ text: String(sc), bold: true, size: 64, font: FONT, color: clr })]
+                }));
+                children.push(new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    spacing: { before: 0, after: 200 },
+                    children: [new TextRun({ text: '综合匹配度评分（满分100分）', size: 20, font: FONT, color: '666666' })]
+                }));
+            } else {
+                children.push(new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    spacing: { before: 120, after: 120 },
+                    children: [new TextRun({ text: trimmed, bold: true, size: 28, font: FONT, color: '1d4ed8' })]
+                }));
+            }
+            i++; continue;
+        }
+
+        // 分隔线
+        if (/^[=\-—_*]{3,}$/.test(trimmed)) {
             children.push(new Paragraph({
-                heading: HeadingLevel.HEADING_2,
-                spacing: { before: 240, after: 120 },
+                border: { bottom: { color: 'CCCCCC', size: 4, style: 'single' } },
+                spacing: { before: 100, after: 100 }
+            }));
+            i++; continue;
+        }
+
+        // 章节标题：一、二、三...
+        if (/^[一二三四五六七八九十]+、/.test(trimmed)) {
+            children.push(new Paragraph({
+                heading: HeadingLevel.HEADING_1,
+                spacing: { before: 300, after: 120 },
+                border: { bottom: { color: '2563EB', size: 6, style: 'single' } },
                 children: [new TextRun({ text: trimmed, bold: true, size: 28, font: FONT, color: '1d4ed8' })]
             }));
-            continue;
+            i++; continue;
         }
 
-        if (/^\d+[.、]\s*/.test(trimmed) && trimmed.length <= 40) {
+        // 子标题：第N题 / ☑/✗ 小标题 / 重要性标注行
+        if (/^第\d+题/.test(trimmed) || /^[☑✓✗✘×]/.test(trimmed) || /^【.+】$/.test(trimmed) && trimmed.length <= 30) {
+            children.push(new Paragraph({
+                heading: HeadingLevel.HEADING_2,
+                spacing: { before: 200, after: 80 },
+                children: [new TextRun({ text: trimmed, bold: true, size: 26, font: FONT, color: '2563eb' })]
+            }));
+            i++; continue;
+        }
+
+        // 重要性行 ★
+        if (/重要性[：:]/.test(trimmed)) {
+            children.push(new Paragraph({
+                spacing: { before: 80, after: 40 },
+                children: [new TextRun({ text: trimmed, bold: true, size: 22, font: FONT, color: 'd97706' })]
+            }));
+            i++; continue;
+        }
+
+        // 数字编号短行 → 加粗小标题
+        if (/^\d+[.、]\s*/.test(trimmed) && trimmed.length <= 50) {
             children.push(new Paragraph({
                 spacing: { before: 120, after: 60 },
                 children: [new TextRun({ text: trimmed, bold: true, size: 24, font: FONT })]
             }));
-            continue;
+            i++; continue;
         }
 
+        // ■ 开头
         if (trimmed.startsWith('■')) {
             children.push(new Paragraph({
                 spacing: { before: 80, after: 40 },
                 children: [new TextRun({ text: trimmed.replace(/^■\s*/, ''), bold: true, size: 24, font: FONT, color: '2563eb' })]
             }));
-            continue;
+            i++; continue;
         }
 
-        if (/^[-?·]\s*/.test(trimmed) || /^\s*\d+[.)、]/.test(line)) {
+        // · / • / - 列表项
+        if (/^[·•\-\*]\s*/.test(trimmed) || /^\s*\d+[.)、]/.test(line)) {
             children.push(new Paragraph({
                 indent: { left: 480 },
                 spacing: { before: 40, after: 40 },
-                children: [new TextRun({ text: trimmed, size: 22, font: FONT })]
+                children: parseInlineRuns(trimmed)
             }));
-            continue;
+            i++; continue;
         }
 
+        // 普通段落（支持 **加粗** 解析）
         children.push(new Paragraph({
             spacing: { before: 60, after: 60 },
-            children: [new TextRun({ text: trimmed, size: 22, font: FONT })]
+            children: parseInlineRuns(trimmed)
         }));
+        i++;
     }
 
+    // ---- 构建文档 ----
     const now = new Date();
     const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
 
