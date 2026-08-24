@@ -110,11 +110,11 @@ function viewHistoryItem(idx) {
         </div>
         <div class="modal-section">
             <h3>📝 综合岗位匹配度报告</h3>
-            <div class="modal-content">${escapeHtml(item.reportText || '（无内容）')}</div>
+            <div class="modal-content">${escapeHtml(cleanMarkdown(item.reportText) || '（无内容）')}</div>
         </div>
         <div class="modal-section">
             <h3>🎤 面试提纲</h3>
-            <div class="modal-content">${escapeHtml(item.interviewText || '（无内容）')}</div>
+            <div class="modal-content">${escapeHtml(cleanMarkdown(item.interviewText) || '（无内容）')}</div>
         </div>
         <div style="text-align:center;margin-top:1rem;display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;">
             <button class="btn-download docx" onclick="downloadHistoryItem(${idx}, 'match', 'docx')">📥 下载报告 (Word)</button>
@@ -672,7 +672,8 @@ ${truncate(state.texts.assessment, 5000)}
 
 async function generateFullReport(name, resumeResult, assessmentResult) {
     const position = state.selectedPosition || '目标岗位';
-    const systemPrompt = `你是一位资深高级人力资源顾问，负责为鸿萌橡塑撰写专业的候选人综合岗位匹配度分析报告。报告必须严格遵循以下章节结构和格式，包含数据表格，客观全面，有数据支撑，最终给出100分制综合评分。`;
+    const systemPrompt = `你是一位资深高级人力资源顾问，负责为鸿萌橡塑撰写专业的候选人综合岗位匹配度分析报告。
+核心要求：报告必须严格遵循以下章节结构和格式。大量使用markdown表格呈现信息，使内容清晰、美观、一目了然。客观全面，有数据支撑，最终给出100分制综合评分。`;
 
     const userPrompt = `请为候选人 ${name}（应聘岗位：${position}）生成一份完整的综合岗位匹配度报告。
 
@@ -685,7 +686,7 @@ ${resumeResult}
 【测评三维度分析】
 ${assessmentResult}
 
-请严格按照以下格式生成报告（注意：所有表格必须使用markdown管道符格式，即用 | 作为列分隔符）：
+请严格按照以下格式生成报告。极其重要：所有表格必须使用markdown表格格式（用 | 作为列分隔符，第二行用 |---|---| 作为分隔行）。
 
 综合匹配度评分：XX分/100分
 
@@ -705,45 +706,50 @@ ${assessmentResult}
 
 | JD要求 | 简历对应 | 匹配情况 |
 |--------|---------|----------|
-| ... | ... | 完全符合/高度匹配 |
+| 具体JD要求 | 简历中的对应事实 | 完全符合/高度匹配 |
+（逐条列出所有完全匹配的JD要求）
 
 部分匹配/待验证项
 
 | JD要求 | 简历对应 | 分析 |
 |--------|---------|------|
-| ... | ... | 需面试确认... |
+| 具体JD要求 | 简历中的对应事实 | 差异分析和需确认点 |
+（逐条列出所有部分匹配项）
 
 明显缺失项
 
 | JD要求 | 简历对应 | 分析 |
 |--------|---------|------|
-| ... | 未提及/空白 | 短板说明... |
+| 具体JD要求 | 未提及/空白 | 短板说明和影响程度 |
+（逐条列出所有缺失项）
 
 三、核心优势
-（列出5点以上核心优势，每点用数字编号+加粗标题，后跟具体说明，强调其对公司的价值和可迁移性）
+（列出5点以上，每点格式：数字编号.加粗标题 换行 具体说明2-3句，强调对公司的价值和可迁移性）
 
 四、主要劣势与风险
-（列出3-5点主要劣势和风险，每点用数字编号+加粗标题，后跟具体分析及应对/验证建议）
+（列出3-5点，每点格式同上，含具体分析和应对/验证建议）
 
 四、综合人岗匹配诊断
 
 | 成长维度 | 匹配度评分(满分10) | 核心结论 |
 |---------|------------------|----------|
-| 成长的基础 | X.X/10 | 一句话核心结论 |
-| 成长的潜力 | X.X/10 | 一句话核心结论 |
-| 成长的渴望 | X.X/10 | 一句话核心结论 |
+| 成长的基础 | X.X/10 | 一句话精准结论 |
+| 成长的潜力 | X.X/10 | 一句话精准结论 |
+| 成长的渴望 | X.X/10 | 一句话精准结论 |
 
 五、与同岗位其他候选人的差异化竞争力
 
 | 对比维度 | 该候选人 | 一般同业候选人 | 优势/短板 |
 |---------|---------|--------------|----------|
-| ... | ☑/✗描述 | 描述 | 判断 |
+| 维度名 | ☑有/✗无+具体描述 | 多数没有/部分有 | 稀缺性高/短板明显 |
+（至少对比5个关键维度）
 
 六、面试阶段需进一步验证的问题
 
 | 验证项目 | 重要性 | 面试问题(建议STAR法则追问) |
-|---------|-------|--------------------------|
-| ... | 高/中/低 | 具体问题 |
+|---------|-------|---------------------------|
+| 待验证能力 | 高/中/低 | 具体面试问题 |
+（至少列出5-6个需验证的关键问题）
 
 七、录用建议
 
@@ -751,23 +757,25 @@ ${assessmentResult}
 
 | 方案 | 岗位定位 | 匹配度评估 |
 |------|---------|------------|
-| 方案一 | ... | XX分 |
-| 方案二 | ... | XX分 |
-| 方案三 | ... | - |
+| 方案一：直接录用为XX（培养型） | 岗位定位说明 | XX分 |
+| 方案二：录用为XX（专家型） | 岗位定位说明 | XX分 |
+| 方案三：继续寻访 | - | - |
 
-综合判断（一段总结性文字）
+综合判断（一段总结性文字，明确给出推荐方案及理由）
 
 重要要求：
 1. 所有评分和结论必须基于提供的分析数据，客观有据
-2. 所有表格必须严格使用markdown管道符表格格式（用 | 分隔列）
+2. 所有表格必须严格使用markdown表格格式（| 列1 | 列2 |），这是最重要的格式要求
 3. 综合评分必须客观合理，与各维度分析一致
-4. 优势和劣势分析要具体详实，引用简历和测评中的具体事实`;
+4. 优势和劣势分析要具体详实，引用简历和测评中的具体事实
+5. 每个章节都必须包含实质内容，不能留空或省略
+6. 禁止使用 # 或 ## 或 ### 等markdown标题符号，章节标题用中文数字编号（一、二、三...）即可`;
 
     return await callDeepSeek(systemPrompt, userPrompt, 4096);
 }
 
 async function designInterviewQuestions(name, fullReport) {
-    const systemPrompt = `你是一位资深面试官，擅长设计结构化面试提纲。题目针对性强、有深度，能有效验证候选人真实能力和潜在风险。输出格式整洁清晰、美观专业。`;
+    const systemPrompt = `你是一位资深面试官，擅长设计结构化面试提纲。题目针对性强、有深度，能有效验证候选人真实能力和潜在风险。输出必须以表格为主要呈现形式，整洁清晰、美观专业。`;
 
     const userPrompt = `请根据以下综合报告，为候选人 ${name} 设计一份结构化面试提纲，共约10道题。
 
@@ -780,48 +788,54 @@ ${fullReport}
 3. 每题标注重要性（高/中/低）
 4. 每题包含面试主问题 + 2-3个递进式追问要点
 
-请严格按以下格式输出：
+请严格按以下格式输出，核心内容必须以表格呈现：
 
 ${name} 面试提纲
 
-一、专业能力验证
+| 序号 | 验证项目 | 重要性 | 面试问题(建议STAR法则追问) |
+|------|---------|--------|---------------------------|
+| 1 | 专业能力-XX | 高 | 具体面试问题 |
+| 2 | 专业能力-XX | 高 | 具体面试问题 |
+| ... | ... | ... | ... |
+（共约10题，用表格列出全部题目）
 
-第1题  重要性：★★★
-面试问题：（具体的面试问题，建议STAR法则追问）
+二、各题详细追问要点
+
+第1题（对应表格序号）
 追问要点：
-· ...
-· ...
+· 追问1
+· 追问2
+· 追问3
+考察重点：一句话说明
 
-第2题  重要性：★★☆
-...
-
-二、行为面试（STAR法则）
-
-第X题  重要性：★★★
-面试问题：...
+第2题
 追问要点：
-· ...
-· ...
+· 追问1
+· 追问2
+考察重点：一句话说明
 
-三、情景模拟
+（依次列出所有题目的追问要点）
 
-第X题  重要性：★★☆
-面试问题：...
-追问要点：
-· ...
+三、面试评分参考
 
-四、动机与价值观
+简要说明各维度的评分要点和关注信号（好的回答 vs 警示信号）。
 
-第X题  重要性：★★☆
-面试问题：...
-追问要点：
-· ...
-
-五、面试评分参考
-
-简要说明各题目的评分要点和关注信号（什么样的回答是好的，什么是警示信号）。`;
+注意：禁止使用 # 或 ## 或 ### 等markdown标题符号，用中文数字编号即可。`;
 
     return await callDeepSeek(systemPrompt, userPrompt, 4096);
+}
+
+// ========== 清除markdown格式符号 ==========
+function cleanMarkdown(text) {
+    if (!text) return '';
+    return text
+        .replace(/^#{1,6}\s*/gm, '')       // 移除 # ## ### 等标题符号
+        .replace(/\*\*(.+?)\*\*/g, '$1')    // 移除 **加粗** 保留文字
+        .replace(/\*(.+?)\*/g, '$1')        // 移除 *斜体* 保留文字
+        .replace(/={2,}/g, '')              // 移除 == 标记
+        .replace(/^\s*[-]{3,}\s*$/gm, '')   // 移除 --- 分隔线
+        .replace(/^\|[\s\-:|]+\|$/gm, '')   // 移除表格分隔行 |---|---|
+        .replace(/\n{3,}/g, '\n\n');         // 压缩多余空行
 }
 
 // ========== 显示结果 ==========
@@ -839,9 +853,9 @@ function displayResults() {
     else if (state.score >= 60) label.textContent = '匹配度中等 - 建议进一步评估';
     else label.textContent = '匹配度偏低 - 谨慎考虑';
 
-    // 报告内容
-    document.getElementById('reportContent').textContent = state.reportText;
-    document.getElementById('interviewContent').textContent = state.interviewText;
+    // 报告内容（清除markdown符号后显示）
+    document.getElementById('reportContent').textContent = cleanMarkdown(state.reportText);
+    document.getElementById('interviewContent').textContent = cleanMarkdown(state.interviewText);
 
     // 滚动到结果
     section.scrollIntoView({ behavior: 'smooth' });
@@ -915,16 +929,18 @@ async function generateDocx(text, title) {
     }
 
     // ---- 辅助：创建表格行 ----
-    function mkRow(cells, maxCols, isHeader) {
-        const borderDef = { style: BorderStyle.SINGLE, size: 1, color: 'BFBFBF' };
+    function mkRow(cells, maxCols, isHeader, rowIdx) {
+        const isEven = rowIdx % 2 === 0;
         return new TableRow({
             tableHeader: isHeader,
             children: cells.map(text => new TableCell({
                 verticalAlign: VerticalAlign.CENTER,
-                shading: isHeader ? { type: ShadingType.SOLID, color: '2563EB', fill: '2563EB' } : undefined,
-                margins: { top: 40, bottom: 40, left: 80, right: 80 },
+                shading: isHeader
+                    ? { type: ShadingType.SOLID, color: '2563EB', fill: '2563EB' }
+                    : (!isHeader && isEven ? { type: ShadingType.SOLID, color: 'F2F7FB', fill: 'F2F7FB' } : undefined),
+                margins: { top: 50, bottom: 50, left: 100, right: 100 },
                 children: [new Paragraph({
-                    spacing: { before: 30, after: 30 },
+                    spacing: { before: 40, after: 40 },
                     children: [new TextRun({
                         text: (text || '').replace(/\*\*/g, ''),
                         bold: isHeader || /\*\*/.test(text || ''),
@@ -944,7 +960,7 @@ async function generateDocx(text, title) {
         return new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             borders: { top: borderDef, bottom: borderDef, left: borderDef, right: borderDef, insideHorizontal: borderDef, insideVertical: borderDef },
-            rows: dataRows.map((cells, idx) => mkRow(cells, maxCols, idx === 0))
+            rows: dataRows.map((cells, idx) => mkRow(cells, maxCols, idx === 0, idx))
         });
     }
 
@@ -1060,6 +1076,22 @@ async function generateDocx(text, title) {
             children.push(new Paragraph({
                 spacing: { before: 80, after: 40 },
                 children: [new TextRun({ text: trimmed, bold: true, size: 22, font: FONT, color: 'd97706' })]
+            }));
+            i++; continue;
+        }
+
+        // ☑/✗ 开头行 → 彩色显示
+        if (/^[☑✓]/.test(trimmed)) {
+            children.push(new Paragraph({
+                spacing: { before: 120, after: 60 },
+                children: [new TextRun({ text: trimmed, bold: true, size: 24, font: FONT, color: '059669' })]
+            }));
+            i++; continue;
+        }
+        if (/^[✗✘×]/.test(trimmed)) {
+            children.push(new Paragraph({
+                spacing: { before: 120, after: 60 },
+                children: [new TextRun({ text: trimmed, bold: true, size: 24, font: FONT, color: 'dc2626' })]
             }));
             i++; continue;
         }
