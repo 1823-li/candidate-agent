@@ -12,6 +12,187 @@ const state = {
 
 const LIB_STORAGE_KEY = 'hm_profile_library_v1';
 const DEFAULT_PROFILE_URL = './data/人才画像.xlsx';
+const HISTORY_STORAGE_KEY = 'hm_analysis_history_v1';
+const MAX_HISTORY_ITEMS = 50; // 最多保留50条历史记录
+
+// ========== 历史记录管理 ==========
+function loadHistory() {
+    try {
+        const data = localStorage.getItem(HISTORY_STORAGE_KEY);
+        return data ? JSON.parse(data) : [];
+    } catch (e) {
+        console.warn('历史记录加载失败', e);
+        return [];
+    }
+}
+
+function saveHistoryList(list) {
+    try {
+        // 限制条数，超出时移除最旧的
+        if (list.length > MAX_HISTORY_ITEMS) {
+            list = list.slice(0, MAX_HISTORY_ITEMS);
+        }
+        localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(list));
+    } catch (e) {
+        console.warn('历史记录保存失败', e);
+        // localStorage 可能已满，尝试清理旧记录
+        if (e.name === 'QuotaExceededError' || e.code === 22) {
+            try {
+                const trimmed = list.slice(0, Math.floor(list.length / 2));
+                localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(trimmed));
+                showToast('⚠ 存储空间不足，已自动清理较早的记录', 'error');
+            } catch (e2) {
+                console.error('清理后仍保存失败', e2);
+            }
+        }
+    }
+}
+
+function addToHistory(record) {
+    const list = loadHistory();
+    list.unshift(record); // 最新的排最前
+    saveHistoryList(list);
+    renderHistory();
+}
+
+function renderHistory() {
+    const list = loadHistory();
+    const section = document.getElementById('historySection');
+    const listEl = document.getElementById('historyList');
+
+    if (list.length === 0) {
+        section.classList.remove('active');
+        return;
+    }
+
+    section.classList.add('active');
+    listEl.innerHTML = list.map((item, idx) => {
+        const scoreClass = item.score >= 80 ? 'score-high' : item.score >= 60 ? 'score-mid' : 'score-low';
+        const dateStr = item.time || '-';
+        const position = item.position || '未选择';
+        return `<li class="history-item">
+            <div class="history-score ${scoreClass}">${item.score}</div>
+            <div class="history-info">
+                <div class="h-name">${escapeHtml(item.name)}</div>
+                <div class="h-meta">🏢 ${escapeHtml(position)} 📅 ${escapeHtml(dateStr)}</div>
+            </div>
+            <div class="history-actions">
+                <button class="btn-hist view" onclick="viewHistoryItem(${idx})" title="查看详情">👁 查看</button>
+                <button class="btn-hist dl-txt" onclick="downloadHistoryItem(${idx}, 'match', 'txt')" title="下载报告TXT">📥 报告</button>
+                <button class="btn-hist dl-txt" onclick="downloadHistoryItem(${idx}, 'interview', 'txt')" title="下载面试题TXT">📥 面试题</button>
+                <button class="btn-hist del" onclick="deleteHistoryItem(${idx})" title="删除此记录">🗑</button>
+            </div>
+        </li>`;
+    }).join('');
+}
+
+function viewHistoryItem(idx) {
+    const list = loadHistory();
+    const item = list[idx];
+    if (!item) return;
+
+    const scoreClass = item.score >= 80 ? 'score-high' : item.score >= 60 ? 'score-mid' : 'score-low';
+    const body = document.getElementById('historyModalBody');
+
+    let scoreLabel = '';
+    if (item.score >= 80) scoreLabel = '匹配度高 - 推荐进入下一轮';
+    else if (item.score >= 60) scoreLabel = '匹配度中等 - 建议进一步评估';
+    else scoreLabel = '匹配度偏低 - 谨慎考虑';
+
+    body.innerHTML = `
+        <h2>📋 ${escapeHtml(item.name)} - 分析记录详情</h2>
+        <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem;">
+            🏢 应聘岗位：${escapeHtml(item.position || '未选择')}  📅 分析时间：${escapeHtml(item.time || '-')}
+        </div>
+        <div class="modal-score">
+            <div class="score-circle ${scoreClass}">${item.score}</div>
+            <div style="font-size:0.85rem;color:var(--text-secondary);margin-top:0.4rem;">${scoreLabel}</div>
+        </div>
+        <div class="modal-section">
+            <h3>📝 综合岗位匹配度报告</h3>
+            <div class="modal-content">${escapeHtml(item.reportText || '（无内容）')}</div>
+        </div>
+        <div class="modal-section">
+            <h3>🎤 结构化面试题</h3>
+            <div class="modal-content">${escapeHtml(item.interviewText || '（无内容）')}</div>
+        </div>
+        <div style="text-align:center;margin-top:1rem;display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;">
+            <button class="btn-download docx" onclick="downloadHistoryItem(${idx}, 'match', 'docx')">📥 下载报告 (Word)</button>
+            <button class="btn-download" onclick="downloadHistoryItem(${idx}, 'match', 'txt')">📥 下载报告 (TXT)</button>
+            <button class="btn-download docx" onclick="downloadHistoryItem(${idx}, 'interview', 'docx')">📥 下载面试题 (Word)</button>
+            <button class="btn-download" onclick="downloadHistoryItem(${idx}, 'interview', 'txt')">📥 下载面试题 (TXT)</button>
+        </div>
+    `;
+
+    document.getElementById('historyModalOverlay').classList.add('active');
+}
+
+function closeHistoryModal(event) {
+    // 点击遮罩层关闭，或显式关闭
+    if (!event || event.target === document.getElementById('historyModalOverlay')) {
+        document.getElementById('historyModalOverlay').classList.remove('active');
+    }
+}
+
+function deleteHistoryItem(idx) {
+    if (!confirm('确定删除此条分析记录吗？')) return;
+    const list = loadHistory();
+    list.splice(idx, 1);
+    saveHistoryList(list);
+    renderHistory();
+    showToast('🗑 已删除该记录', 'success');
+}
+
+function clearAllHistory() {
+    if (!confirm('确定清空所有分析记录吗？此操作不可恢复！')) return;
+    localStorage.removeItem(HISTORY_STORAGE_KEY);
+    renderHistory();
+    showToast('🗑 已清空所有记录', 'success');
+}
+
+function downloadHistoryItem(idx, type, format) {
+    const list = loadHistory();
+    const item = list[idx];
+    if (!item) return;
+
+    let content, filename;
+    if (type === 'match') {
+        content = item.reportText || '';
+        filename = `${item.name}_综合岗位匹配度报告`;
+    } else {
+        content = item.interviewText || '';
+        filename = `${item.name}_结构化面试题`;
+    }
+
+    if (format === 'docx') {
+        if (typeof docx === 'undefined') {
+            showToast('⚠ Word 导出库未加载，请检查网络后重试', 'error');
+            return;
+        }
+        generateDocx(content, filename).then(blob => {
+            saveFile(blob, filename + '.docx');
+            showToast(`📦 已下载: ${filename}.docx`, 'success');
+        }).catch(err => {
+            showToast(`⚠ Word 导出失败: ${err.message}`, 'error');
+        });
+        return;
+    }
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    saveFile(blob, filename + '.txt');
+    showToast(`📥 已下载: ${filename}.txt`, 'success');
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 页面初始化时加载历史记录
+loadHistory();
+renderHistory();
 
 // ========== 岗位人才画像库 ==========
 async function initProfileLibrary() {
@@ -43,7 +224,7 @@ async function loadDefaultProfiles() {
         renderProfileLibrary();
     } catch (e) {
         document.getElementById('libStatus').innerHTML =
-            '⚠️ 默认画像文件加载失败（' + e.message + '），请点击“导入/更新画像文件”手动上传 .xlsx';
+            '⚠️ 默认画像文件加载失败（' + e.message + '），请点击"导入/更新画像文件"手动上传 .xlsx';
     }
 }
 
@@ -72,9 +253,9 @@ function renderProfileLibrary() {
 
     const meta = state.profileLibMeta || {};
     document.getElementById('libStatus').innerHTML =
-        `当前画像库：<b>${names.length}</b> 个岗位　|　来源：${meta.source || '默认文件'}　|　更新时间：${meta.time || '-'}`;
+        `当前画像库：<b>${names.length}</b> 个岗位 | 来源：${meta.source || '默认文件'} | 更新时间：${meta.time || '-'}`;
 
-    // 恢复之前的选中项
+    // 恢复之前选中项
     if (state.selectedPosition && state.profileLib[state.selectedPosition]) {
         select.value = state.selectedPosition;
         onPositionSelect();
@@ -123,7 +304,7 @@ function resetToDefaultProfiles() {
     localStorage.removeItem(LIB_STORAGE_KEY);
     state.selectedPosition = '';
     loadDefaultProfiles();
-    showToast('↩ 已恢复为默认画像文件', 'success');
+    showToast('✅ 已恢复为默认画像文件', 'success');
 }
 
 // 页面加载时初始化画像库
@@ -131,7 +312,7 @@ initProfileLibrary();
 
 // ========== 文件上传处理 ==========
 document.querySelectorAll('input[type="file"]').forEach(input => {
-    if (!input.dataset.target) return; // 跳过画像库导入等非候选人材料输入
+    if (!input.dataset.target) return;
     input.addEventListener('change', async (e) => {
         const target = e.target.dataset.target;
         const file = e.target.files[0];
@@ -143,7 +324,6 @@ document.querySelectorAll('input[type="file"]').forEach(input => {
             state.texts[target] = await extractText(file);
             showToast(`✅ ${file.name} 解析成功`, 'success');
         } catch (err) {
-            // 解析失败：回滚上传状态，避免误认为已就绪
             state.files[target] = null;
             state.texts[target] = '';
             document.getElementById(`fname-${target}`).textContent = '';
@@ -154,7 +334,7 @@ document.querySelectorAll('input[type="file"]').forEach(input => {
     });
 });
 
-// ========== 文件文本提取 ==========
+// ========== 文件文本的取 ==========
 async function extractText(file) {
     const ext = file.name.split('.').pop().toLowerCase();
     let text;
@@ -165,7 +345,6 @@ async function extractText(file) {
     else if (ext === 'doc') throw new Error('不支持旧版 .doc 格式，请用 Word 另存为 .docx 后重新上传');
     else throw new Error('不支持的文件格式: .' + ext);
 
-    // 文本类文件：检测是否为二进制/损坏文件
     if (isBinaryText(text)) {
         throw new Error(`文件 "${file.name}" 内容为二进制乱码，可能已损坏，请重新下载/导出后再上传`);
     }
@@ -177,7 +356,7 @@ async function extractText(file) {
 
 function isBinaryText(text) {
     const sample = text.slice(0, 800);
-    if (!sample.trim()) return text.length > 0; // 有内容但全是空白/控制符
+    if (!sample.trim()) return text.length > 0;
     const controls = (sample.match(/[\x00-\x08\x0E-\x1F]/g) || []).length;
     return controls / sample.length > 0.1;
 }
@@ -185,9 +364,7 @@ function isBinaryText(text) {
 async function extractHtmlText(file) {
     const html = await file.text();
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    // 移除脚本和样式
     doc.querySelectorAll('script, style, noscript').forEach(el => el.remove());
-    // 将块级元素边界转为换行，保留表格结构
     doc.querySelectorAll('tr').forEach(tr => tr.insertAdjacentText('beforeend', '\n'));
     doc.querySelectorAll('td, th').forEach(cell => cell.insertAdjacentText('beforeend', ' | '));
     doc.querySelectorAll('p, div, li, h1, h2, h3, h4, h5, h6, br').forEach(el => el.insertAdjacentText('beforeend', '\n'));
@@ -233,7 +410,7 @@ const AI_PRESETS = {
     zhipu: {
         base: 'https://open.bigmodel.cn/api/paas/v4',
         model: 'glm-4-flash',
-        hint: '智谱开放平台：访问 open.bigmodel.cn 注册，GLM Flash 系列为免费档。注册后在“API密钥”页创建 Key'
+        hint: '智谱开放平台：访问 open.bigmodel.cn 注册，GLM Flash 系列为免费档。注册后在"API密钥"页创建 Key'
     },
     openrouter: {
         base: 'https://openrouter.ai/api/v1',
@@ -263,11 +440,11 @@ async function testConnection() {
     const apiBase = document.getElementById('apiBase').value.trim();
     const isLocal = /localhost|127\.0\.0\.1/.test(apiBase);
     if (!apiKey && !isLocal) {
-        statusEl.textContent = '❌ 请先填写 API Key（或选择本地 Ollama 方案）';
+        statusEl.textContent = '⚠ 请先填写 API Key（或选择本地 Ollama 方案）';
         statusEl.style.color = 'var(--danger)';
         return;
     }
-    statusEl.textContent = '⏳ 正在测试连接...';
+    statusEl.textContent = '🔍 正在测试连接...';
     statusEl.style.color = 'var(--text-secondary)';
     try {
         const reply = await callDeepSeek('你是一个助手，请用一个字回答。', '你好', 16);
@@ -283,7 +460,7 @@ async function testConnection() {
     }
 }
 
-// 初始化：默认选中硅基流动预设并显示提示
+// 初始化：默认选中硅基流动预设
 applyProvider();
 
 // ========== DeepSeek API 调用 ==========
@@ -293,9 +470,8 @@ async function callDeepSeek(systemPrompt, userPrompt, maxTokens = 4096) {
     const modelName = document.getElementById('modelName').value.trim() || 'deepseek-chat';
     const isLocal = /localhost|127\.0\.0\.1/.test(apiBase);
     if (!apiKey && !isLocal) throw new Error('请先填写 API Key（或选择本地 Ollama 方案）');
-    const authKey = apiKey || 'ollama'; // 本地服务无需真实密钥
+    const authKey = apiKey || 'ollama';
 
-    // 兼容带/不带 /v1 后缀的 API 地址
     const base = apiBase.replace(/\/+$/, '');
     const endpoint = /\/v\d+$/.test(base) ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
 
@@ -337,8 +513,8 @@ function setStep(stepNum, status) {
     const el = document.getElementById(`step-${stepNum}`);
     el.className = status;
     const icon = el.querySelector('.step-icon');
-    if (status === 'active') icon.textContent = '◉';
-    else if (status === 'done') icon.textContent = '✓';
+    if (status === 'active') icon.textContent = '⏳';
+    else if (status === 'done') icon.textContent = '✅';
     else icon.textContent = '○';
     const progress = Math.min(Math.round((stepNum / 6) * 100), 100);
     document.getElementById('progressBar').style.width = progress + '%';
@@ -348,7 +524,6 @@ function setStep(stepNum, status) {
 async function startAnalysis() {
     const candidateName = document.getElementById('candidateName').value.trim() || '候选人';
 
-    // 验证岗位选择与文件
     const missing = [];
     if (!state.texts.profile) missing.push('应聘岗位（请在画像库中选择）');
     const labels = { resume: '简历', gpi: 'GPI个性测验报告', assessment: '职能支持岗综合测评报告' };
@@ -360,7 +535,6 @@ async function startAnalysis() {
         return;
     }
 
-    // 禁用按钮，显示进度
     const btn = document.getElementById('btnGenerate');
     btn.disabled = true;
     document.getElementById('progressSection').classList.add('active');
@@ -368,26 +542,21 @@ async function startAnalysis() {
     for (let i = 1; i <= 6; i++) setStep(i, '');
 
     try {
-        // Step 1: 解析文件
         setStep(1, 'active');
         await sleep(500);
         setStep(1, 'done');
 
-        // Step 2: 简历与岗位匹配度分析
         setStep(2, 'active');
         const resumeMatchResult = await analyzeResumeMatch(candidateName);
         setStep(2, 'done');
 
-        // Step 3: 测评报告三维度分析
         setStep(3, 'active');
         const assessmentResult = await analyzeAssessment(candidateName);
         setStep(3, 'done');
 
-        // Step 4: 生成综合报告
         setStep(4, 'active');
         const fullReport = await generateFullReport(candidateName, resumeMatchResult, assessmentResult);
         state.reportText = fullReport;
-        // 提取分数
         const scoreMatch = fullReport.match(/综合评分[：:\s]*(\d{1,3})\s*分/);
         if (scoreMatch) {
             state.score = parseInt(scoreMatch[1]);
@@ -397,19 +566,29 @@ async function startAnalysis() {
         }
         setStep(4, 'done');
 
-        // Step 5: 设计面试题
         setStep(5, 'active');
         const interviewQuestions = await designInterviewQuestions(candidateName, fullReport);
         state.interviewText = interviewQuestions;
         setStep(5, 'done');
 
-        // Step 6: 完成
         setStep(6, 'done');
         document.getElementById('progressBar').style.width = '100%';
 
-        // 显示结果
         displayResults();
-        showToast('🎉 分析完成！', 'success');
+
+        // 💾 保存到历史记录
+        const historyRecord = {
+            id: Date.now(),
+            name: candidateName,
+            position: state.selectedPosition || '未选择',
+            score: state.score,
+            reportText: state.reportText,
+            interviewText: state.interviewText,
+            time: new Date().toLocaleString('zh-CN')
+        };
+        addToHistory(historyRecord);
+
+        showToast('🎉 分析完成！已自动保存到历史记录', 'success');
 
     } catch (err) {
         showToast(`分析失败: ${err.message}`, 'error');
@@ -422,14 +601,14 @@ async function startAnalysis() {
 // ========== 分析函数 ==========
 async function analyzeResumeMatch(name) {
     const position = state.selectedPosition || '目标岗位';
-    const systemPrompt = `你是一位资深的人力资源专家，擅长通过简历分析候选人与岗位的匹配度。请从简历角度，结合岗位人才画像，详细分析候选人的优势与劣势。`;
+    const systemPrompt = `你是一位资深的人力资源专家，擅长通过简历分析候选人与岗位的匹配度。请从简历的角度，结合岗位人才画像，详细分析候选人的优势与劣势。`;
 
     const userPrompt = `请分析以下候选人与目标岗位的匹配度。
 
-【岗位人才画像 - ${position}】
+\u3010\u5c97\u4f4d\u4eba\u624d\u753b\u50cf - ${position}\u3011
 ${truncate(state.texts.profile, 5000)}
 
-【候选人简历 - ${name}】
+\u3010\u5019\u9009\u4eba\u7b80\u5386 - ${name}\u3011
 ${truncate(state.texts.resume, 5000)}
 
 请从以下方面进行分析：
@@ -446,14 +625,14 @@ ${truncate(state.texts.resume, 5000)}
 }
 
 async function analyzeAssessment(name) {
-    const systemPrompt = `你是一位专业的心理测评分析师，擅长解读北森GPI个性测验和职能支持岗综合测评报告。请按"成长的基础"、"成长的潜力"、"成长的渴望"三个维度综合分析候选人与鸿萌橡塑的匹配度。`;
+    const systemPrompt = `你是一位专业的心理测评分析师，擅长解读北森GPI个性测验和职能支持岗综合测评报告。请按“成长的基础”、“成长的潜力”、“成长的渴望”三个维度综合分析候选人与鸿萌橡塑的匹配度。`;
 
     const userPrompt = `请根据以下两份测评报告，按三个维度分析候选人 ${name} 与鸿萌橡塑的匹配度。
 
-【北森GPI个性测验测评报告】
+\u3010\u5317\u68eeGPI\u4e2a\u6027\u6d4b\u9a8c\u6d4b\u8bc4\u62a5\u544a\u3011
 ${truncate(state.texts.gpi, 5000)}
 
-【职能支持岗综合测评报告】
+\u3010\u804c\u80fd\u652f\u6301\u5c97\u7efc\u5408\u6d4b\u8bc4\u62a5\u544a\u3011
 ${truncate(state.texts.assessment, 5000)}
 
 请按以下三个维度进行分析：
@@ -483,10 +662,10 @@ async function generateFullReport(name, resumeResult, assessmentResult) {
 
     const userPrompt = `请为候选人 ${name} 生成一份完整的综合岗位匹配度报告。
 
-【简历匹配度分析】
+\u3010\u7b80\u5386\u5339\u914d\u5ea6\u5206\u6790\u3011
 ${resumeResult}
 
-【测评三维度分析】
+\u3010\u6d4b\u8bc4\u4e09\u7ef4\u5ea6\u5206\u6790\u3011
 ${assessmentResult}
 
 请生成一份完整的综合报告，格式如下：
@@ -533,7 +712,7 @@ async function designInterviewQuestions(name, fullReport) {
 
     const userPrompt = `请根据以下综合报告，为候选人 ${name} 设计8-10道结构化面试题。
 
-【综合报告】
+\u3010\u7efc\u5408\u62a5\u544a\u3011
 ${fullReport}
 
 设计要求：
@@ -578,7 +757,6 @@ function displayResults() {
     const section = document.getElementById('resultsSection');
     section.classList.add('active');
 
-    // 评分
     const circle = document.getElementById('scoreCircle');
     circle.textContent = state.score;
     circle.className = 'score-circle ' + (state.score >= 80 ? 'score-high' : state.score >= 60 ? 'score-mid' : 'score-low');
@@ -588,11 +766,9 @@ function displayResults() {
     else if (state.score >= 60) label.textContent = '匹配度中等 - 建议进一步评估';
     else label.textContent = '匹配度偏低 - 谨慎考虑';
 
-    // 报告内容
     document.getElementById('reportContent').textContent = state.reportText;
     document.getElementById('interviewContent').textContent = state.interviewText;
 
-    // 滚动到结果
     section.scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -611,15 +787,15 @@ async function downloadReport(type, format = 'txt') {
 
     if (format === 'docx') {
         if (typeof docx === 'undefined') {
-            showToast('❌ Word 导出库未加载，请检查网络后重试', 'error');
+            showToast('⚠ Word 导出库未加载，请检查网络后重试', 'error');
             return;
         }
         try {
             const blob = await generateDocx(content, filename);
             saveFile(blob, filename + '.docx');
-            showToast(`📥 已下载: ${filename}.docx`, 'success');
+            showToast(`📦 已下载: ${filename}.docx`, 'success');
         } catch (err) {
-            showToast(`❌ Word 导出失败: ${err.message}`, 'error');
+            showToast(`⚠ Word 导出失败: ${err.message}`, 'error');
             console.error(err);
         }
         return;
@@ -652,7 +828,6 @@ async function generateDocx(text, title) {
         const trimmed = line.trim();
         if (!trimmed) continue;
 
-        // 分隔线（==== 或 ----）跳过
         if (/^[=\-—_*]{3,}$/.test(trimmed)) {
             children.push(new Paragraph({
                 border: { bottom: { color: '999999', size: 6, style: 'single' } },
@@ -661,7 +836,6 @@ async function generateDocx(text, title) {
             continue;
         }
 
-        // 文档主标题（第一行或包含“报告”“面试题”且较短的行）
         if (!isTitleHandled) {
             isTitleHandled = true;
             children.push(new Paragraph({
@@ -672,7 +846,6 @@ async function generateDocx(text, title) {
             continue;
         }
 
-        // 章节标题：一、二、三... 或 第N题 或 【...】
         if (/^[一二三四五六七八九十]+、/.test(trimmed) || /^第\d+题/.test(trimmed) || (/^【.+】$/.test(trimmed) && trimmed.length <= 30)) {
             children.push(new Paragraph({
                 heading: HeadingLevel.HEADING_2,
@@ -682,7 +855,6 @@ async function generateDocx(text, title) {
             continue;
         }
 
-        // 小标题：数字编号的短行（如 “1. 教育背景匹配度”）或 ■ 开头的行
         if (/^\d+[.、]\s*/.test(trimmed) && trimmed.length <= 40) {
             children.push(new Paragraph({
                 spacing: { before: 120, after: 60 },
@@ -699,8 +871,7 @@ async function generateDocx(text, title) {
             continue;
         }
 
-        // 列表项：- / • / 缩进数字
-        if (/^[-•·]\s*/.test(trimmed) || /^\s*\d+[.)、]/.test(line)) {
+        if (/^[-?·]\s*/.test(trimmed) || /^\s*\d+[.)、]/.test(line)) {
             children.push(new Paragraph({
                 indent: { left: 480 },
                 spacing: { before: 40, after: 40 },
@@ -709,7 +880,6 @@ async function generateDocx(text, title) {
             continue;
         }
 
-        // 普通段落
         children.push(new Paragraph({
             spacing: { before: 60, after: 60 },
             children: [new TextRun({ text: trimmed, size: 22, font: FONT })]
