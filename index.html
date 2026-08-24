@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>鸿萌橡塑 · 候选人岗位匹配度分析系统</title>
     <meta name="description" content="基于 AI 的候选人岗位匹配度分析：上传简历与测评报告，一键生成综合匹配度报告与结构化面试题">
-    <!-- Open Graph 链接预览（微信/钉钉/飞书分享时显示卡片） -->
     <meta property="og:type" content="website">
     <meta property="og:title" content="鸿萌橡塑 · 候选人岗位匹配度分析系统">
     <meta property="og:description" content="结合岗位人才画像与测评报告，AI 一键生成候选人综合匹配度报告（100分制）与结构化面试题">
@@ -235,7 +234,6 @@
             background: #f8fafc;
             border-radius: 8px;
         }
-        /* 报告格式化排版 */
         .result-content .doc-title {
             text-align: center;
             font-size: 1.25rem;
@@ -403,6 +401,57 @@
             font-size: 0.78rem; cursor: pointer;
         }
         .btn-clear-hist:hover { background: #475569; }
+        .history-modal-overlay {
+            display: none;
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.45);
+            z-index: 900;
+            align-items: center;
+            justify-content: center;
+        }
+        .history-modal-overlay.active { display: flex; }
+        .history-modal {
+            background: var(--card);
+            border-radius: 14px;
+            box-shadow: var(--shadow-lg);
+            width: 90%; max-width: 800px;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 2rem;
+            position: relative;
+        }
+        .history-modal-close {
+            position: absolute; top: 0.8rem; right: 1rem;
+            background: none; border: none;
+            font-size: 1.5rem; cursor: pointer;
+            color: var(--text-secondary);
+        }
+        .history-modal-close:hover { color: var(--danger); }
+        .history-modal h2 {
+            font-size: 1.2rem; font-weight: 700;
+            margin-bottom: 1rem; color: var(--primary-dark);
+        }
+        .history-modal .modal-score {
+            text-align: center; margin-bottom: 1.2rem;
+        }
+        .history-modal .modal-score .score-circle {
+            width: 80px; height: 80px; font-size: 1.8rem;
+        }
+        .history-modal .modal-section {
+            margin-bottom: 1.2rem;
+        }
+        .history-modal .modal-section h3 {
+            font-size: 1rem; font-weight: 600;
+            color: var(--primary); margin-bottom: 0.5rem;
+            display: flex; align-items: center; gap: 0.4rem;
+        }
+        .history-modal .modal-content {
+            font-size: 0.85rem; line-height: 1.8;
+            white-space: pre-wrap; color: var(--text);
+            background: #f8fafc; padding: 1rem;
+            border-radius: 8px; border: 1px solid var(--border);
+            max-height: 300px; overflow-y: auto;
+        }
         @media (max-width: 640px) {
             .upload-grid, .settings-grid { grid-template-columns: 1fr; }
             .container { padding: 1rem; }
@@ -415,7 +464,6 @@
         <p>鸿萌橡塑 · 基于 DeepSeek AI 的智能人才评估</p>
     </div>
     <div class="container">
-        <!-- API 设置 -->
         <div class="card">
             <div class="card-title"><div class="icon">⚙️</div> API 设置</div>
             <div class="settings-grid">
@@ -453,8 +501,6 @@
                 <input type="text" id="candidateName" placeholder="请输入候选人姓名" />
             </div>
         </div>
-
-        <!-- 岗位人才画像库 -->
         <div class="card">
             <div class="card-title"><div class="icon">🏢</div> 岗位人才画像库</div>
             <div class="profile-lib-row">
@@ -471,8 +517,6 @@
             <div class="lib-status" id="libStatus">画像库加载中...</div>
             <div class="profile-preview" id="profilePreview"></div>
         </div>
-
-        <!-- 文件上传 -->
         <div class="card">
             <div class="card-title"><div class="icon">📄</div> 上传候选人材料</div>
             <div class="upload-grid">
@@ -499,13 +543,9 @@
                 </div>
             </div>
         </div>
-
-        <!-- 生成按钮 -->
         <button class="btn-generate" id="btnGenerate" onclick="startAnalysis()">
             <span id="btnText">🚀 一键生成综合匹配度报告</span>
         </button>
-
-        <!-- 进度 -->
         <div class="card progress-section" id="progressSection">
             <div class="card-title"><div class="icon">⏳</div> 分析进度</div>
             <div class="progress-bar-container">
@@ -520,8 +560,6 @@
                 <li id="step-6"><span class="step-icon">○</span> 完成！</li>
             </ul>
         </div>
-
-        <!-- 历史记录 -->
         <div class="card history-section" id="historySection">
             <div class="history-header">
                 <div class="card-title" style="margin-bottom:0;"><div class="icon">📁</div> 过往分析记录</div>
@@ -529,8 +567,6 @@
             </div>
             <ul class="history-list" id="historyList"></ul>
         </div>
-
-        <!-- 结果 -->
         <div class="results-section" id="resultsSection">
             <div class="card">
                 <div class="card-title"><div class="icon">📈</div> 综合评分</div>
@@ -553,7 +589,12 @@
             </div>
         </div>
     </div>
-
+    <div class="history-modal-overlay" id="historyModalOverlay" onclick="closeHistoryModal(event)">
+        <div class="history-modal" id="historyModal">
+            <button class="history-modal-close" onclick="closeHistoryModal()">&times;</button>
+            <div id="historyModalBody"></div>
+        </div>
+    </div>
     <script src="app.js"></script>
 </body>
 </html>
